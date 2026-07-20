@@ -8,29 +8,18 @@ static constexpr int M5STICKS3_I2C_SDA = 47;
 static constexpr int M5STICKS3_I2C_SCL = 48;
 static constexpr uint8_t M5STICKS3_PMIC_ADDRESS = 0x6E;
 
-bool M5StickS3Power::acquire_wire_() {
-  Wire.begin(M5STICKS3_I2C_SDA, M5STICKS3_I2C_SCL, 100000U);
-  delay(5);
-  return true;
-}
-
-void M5StickS3Power::release_wire_() {
-  Wire.end();
-}
-
 bool M5StickS3Power::init_pmic_() {
-  ESP_LOGI(TAG, "Initializing PMIC with M5PM1/Wire");
+  ESP_LOGI(TAG, "Initializing PMIC with M5PM1 on Wire1 (I2C port 1)");
 
-  Wire.end();
-  Wire.begin(M5STICKS3_I2C_SDA, M5STICKS3_I2C_SCL, 100000U);
+  // Use Wire1 (I2C port 1) to avoid conflict with ESPHome I2C on port 0
+  Wire1.begin(M5STICKS3_I2C_SDA, M5STICKS3_I2C_SCL, 100000U);
   delay(20);
 
   const m5pm1_err_t err =
-      this->pm1_.begin(&Wire, M5STICKS3_PMIC_ADDRESS, M5STICKS3_I2C_SDA, M5STICKS3_I2C_SCL, M5PM1_I2C_FREQ_100K);
+      this->pm1_.begin(&Wire1, M5STICKS3_PMIC_ADDRESS, M5STICKS3_I2C_SDA, M5STICKS3_I2C_SCL, M5PM1_I2C_FREQ_100K);
   if (err != M5PM1_OK) {
     ESP_LOGE(TAG, "PMIC init failed: %d", err);
     this->pmic_ready_ = false;
-    Wire.end();
     return false;
   }
 
@@ -57,12 +46,7 @@ bool M5StickS3Power::init_pmic_() {
   }
 
   this->pmic_ready_ = true;
-  ESP_LOGI(TAG, "PMIC init complete");
-
-  // Release I2C port so ESPHome can use it for Grove bus
-  Wire.end();
-  delay(10);
-
+  ESP_LOGI(TAG, "PMIC init complete, 5V boost enabled");
   return true;
 }
 
@@ -111,9 +95,6 @@ void M5StickS3Power::update() {
     return;
   }
 
-  // Temporarily acquire Wire for PMIC communication
-  this->acquire_wire_();
-
   uint16_t input_mv = 0;
   uint16_t five_volt_mv = 0;
   bool input_valid = false;
@@ -155,9 +136,6 @@ void M5StickS3Power::update() {
     this->charging_binary_sensor_->publish_state(input_valid && input_mv >= 4500);
   }
 
-  // Release Wire back so ESPHome I2C can function
-  this->release_wire_();
-
   this->publish_ext_5v_state_();
 }
 
@@ -166,16 +144,10 @@ void M5StickS3Power::set_ext_5v(bool state) {
     return;
   }
 
-  // Temporarily acquire Wire for PMIC communication
-  this->acquire_wire_();
-
   if (this->pm1_.setBoostEnable(state) != M5PM1_OK) {
     ESP_LOGW(TAG, "set boost enable failed");
-    this->release_wire_();
     return;
   }
-
-  this->release_wire_();
 
   this->boost_enabled_ = state;
   this->publish_ext_5v_state_();
@@ -201,7 +173,7 @@ void M5StickS3Power::publish_ext_5v_state_() {
 }
 
 void M5StickS3Power::dump_config() {
-  ESP_LOGCONFIG(TAG, "M5StickS3 Power (M5PM1/Wire)");
+  ESP_LOGCONFIG(TAG, "M5StickS3 Power (M5PM1/Wire1, I2C port 1)");
   LOG_UPDATE_INTERVAL(this);
   LOG_SENSOR("  ", "Battery level", this->battery_level_sensor_);
   LOG_SENSOR("  ", "Battery voltage", this->battery_voltage_sensor_);
