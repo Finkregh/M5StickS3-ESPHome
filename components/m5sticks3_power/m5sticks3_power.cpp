@@ -43,7 +43,7 @@ bool M5StickS3Power::init_pmic_() {
   delay(20);
   this->pm1_.setBoostEnable(true);
   this->boost_enabled_ = true;
-  delay(200);  // Allow Grove port 5V to stabilize and SCD40 to power up
+  delay(1000);  // SCD40 datasheet: 1000ms power-up time to enter idle state
 
   // PYG2_L3B_EN controls the StickS3 LCD/audio rail. Low output enables it.
   this->pm1_.gpioSetFunc(M5PM1_GPIO_NUM_2, M5PM1_GPIO_FUNC_GPIO);
