@@ -8,6 +8,16 @@ static constexpr int M5STICKS3_I2C_SDA = 47;
 static constexpr int M5STICKS3_I2C_SCL = 48;
 static constexpr uint8_t M5STICKS3_PMIC_ADDRESS = 0x6E;
 
+bool M5StickS3Power::acquire_wire_() {
+  Wire.begin(M5STICKS3_I2C_SDA, M5STICKS3_I2C_SCL, 100000U);
+  delay(5);
+  return true;
+}
+
+void M5StickS3Power::release_wire_() {
+  Wire.end();
+}
+
 bool M5StickS3Power::init_pmic_() {
   ESP_LOGI(TAG, "Initializing PMIC with M5PM1/Wire");
 
@@ -20,6 +30,7 @@ bool M5StickS3Power::init_pmic_() {
   if (err != M5PM1_OK) {
     ESP_LOGE(TAG, "PMIC init failed: %d", err);
     this->pmic_ready_ = false;
+    Wire.end();
     return false;
   }
 
@@ -47,6 +58,11 @@ bool M5StickS3Power::init_pmic_() {
 
   this->pmic_ready_ = true;
   ESP_LOGI(TAG, "PMIC init complete");
+
+  // Release I2C port so ESPHome can use it for Grove bus
+  Wire.end();
+  delay(10);
+
   return true;
 }
 
@@ -83,8 +99,8 @@ void M5StickS3Power::setup() {
 }
 
 void M5StickS3Power::update() {
-  if (!this->pmic_ready_ && !this->init_pmic_()) {
-    ESP_LOGW(TAG, "Skipping PMIC sensor update");
+  if (!this->pmic_ready_) {
+    ESP_LOGW(TAG, "Skipping PMIC sensor update - not ready");
     return;
   }
 
@@ -94,6 +110,9 @@ void M5StickS3Power::update() {
     this->publish_ext_5v_state_();
     return;
   }
+
+  // Temporarily acquire Wire for PMIC communication
+  this->acquire_wire_();
 
   uint16_t input_mv = 0;
   uint16_t five_volt_mv = 0;
@@ -136,18 +155,27 @@ void M5StickS3Power::update() {
     this->charging_binary_sensor_->publish_state(input_valid && input_mv >= 4500);
   }
 
+  // Release Wire back so ESPHome I2C can function
+  this->release_wire_();
+
   this->publish_ext_5v_state_();
 }
 
 void M5StickS3Power::set_ext_5v(bool state) {
-  if (!this->pmic_ready_ && !this->init_pmic_()) {
+  if (!this->pmic_ready_) {
     return;
   }
 
+  // Temporarily acquire Wire for PMIC communication
+  this->acquire_wire_();
+
   if (this->pm1_.setBoostEnable(state) != M5PM1_OK) {
     ESP_LOGW(TAG, "set boost enable failed");
+    this->release_wire_();
     return;
   }
+
+  this->release_wire_();
 
   this->boost_enabled_ = state;
   this->publish_ext_5v_state_();
